@@ -1,108 +1,110 @@
+# %%
+from pathlib import Path
+import community
+
 import networkx as nx
 import pandas as pd
 import matplotlib.pyplot as plt
-import regex as re
 
-
-pattern = re.compile(r'([\p{IsHan}\p{IsBopo}\p{IsHira}\p{IsKatakana}]+)', re.UNICODE)
-
-
-class File:
-    def __init__(self, index, filename, machine, threat, domain, num_of_machines):
-        self.index = index
-        self.filename = filename
-        self.machine = machine
-        self.threat = threat
-        self.domain = domain
-        self.num_of_machines = num_of_machines
-
-    def __str__(self):
-        return "index is {}, name is {}, machine is {},threat is {}, domain is {}," \
-               "num_of_machines is {}".format(self.index,
-                                              self.filename,
-                                              self.machine,
-                                              self.threat,
-                                              self.domain,
-                                              self.num_of_machines)
-
-
-def isNaN(num):
-    return num != num
-
-
-data = pd.read_csv('/home/maor/PycharmProjects/mini/Obf_oneInTenWeek1_d1.tsv', sep='\t',
+plt.figure(figsize=(20, 15))
+data_name = 'Obf_oneInTenWeek1_d'
+suffix = '.tsv'
+G = nx.Graph()
+# for i in range(1, 2):
+# print('Running data number - {}'.format(i))
+data = pd.read_csv(Path().joinpath('data', data_name + str(1) + suffix), sep='\t',
                    error_bad_lines=False, index_col=False, dtype='unicode')
 
-columns = data.columns
-i = list(columns.values).index('1/1/2017 7:18:01 PM')  # i will return index of 2, which is 1
+print(len(data))
 
-threats_column = data[data.columns[20]]
-machine_column = data[data.columns[13]]
+name = data.columns[0]
+domain = data.columns[17]
+machine = data.columns[13]
+data = data.sort_values(by=data.columns[0])
+machine_dic = {}
+for index, row in data.iterrows():
+    fileName = row[name]
+    file_domain = row[domain]
+    machine_dic[(fileName, file_domain)] = machine_dic.get((fileName, file_domain), 0) + 1
+# machine_dic = {k: v for k, v in sorted(machine_dic.items(), key=lambda item: item[1])}
+# print(machine_dic)
+
+
+for index, row in data.iterrows():
+    fileName = row[name]
+    file_domain = row[domain]
+    G.add_edge(fileName, file_domain, weight=machine_dic[(fileName, file_domain)])
+
+# %%
+attr = nx.get_edge_attributes(G, 'weight')
+# attr = {key: value for (key, value) in attr.items() if value > 100}
+attr = {k: v for k, v in sorted(attr.items(), key=lambda item: item[1])}
+for key, value in attr.items():
+    print(key, value)
+print("len is ", len(attr))
+
+# %%
+lst = {}
+print("Num of nodes in G {}".format(len(G)))
+# for tup in nx.degree(G):
+#     lst[tup[0]] = tup[1]
+# lst = {k: v for k, v in sorted(lst.items(), key=lambda item: item[1])}
+# print(lst)
+# Find modularity
+partition = community.best_partition(G)
+partition = {k: v for k, v in sorted(partition.items(), key=lambda item: item[1])}
+
 file_names_column = data[data.columns[0]]
-domains_column = data[data.columns[17]]
-infected_index = []
-virus_name = set()
-
-for i, f in enumerate(threats_column):
-    if not isNaN(f):
-        virus_name.add(f)
-        infected_index.append(i)
-
-infected_names_set = set()
-# for i in infected_index:
-#     infected_names_set.add(file_names_column[i])
-print("number of names {} ".format(len(infected_names_set)))
-print("len of infected_index {}".format(len(infected_index)))
-files = []
-for index in infected_index:
-    row = data.loc[[index]]
-    name = row[data.columns[0]].iloc[0]
-    machine = row[data.columns[13]].iloc[0]
-    if (name, machine) in infected_names_set:
-        continue
+fileName_set = set(file_names_column)
+# %%
+for key, val in partition.items():
+    print(key, ':', val)
+# %%
+domain_per_cluster = {}
+files_per_cluster = {}
+for key, val in partition.items():
+    if key in fileName_set:
+        files_per_cluster[val] = files_per_cluster.get(val, []) + [key]
     else:
-        infected_names_set.add((name, machine))
-        threat = row[data.columns[20]].iloc[0]
-        domain = row[data.columns[17]].iloc[0]
-        file = File(index, name, machine, threat, domain, 0)
-        files.append(file)
+        domain_per_cluster[val] = domain_per_cluster.get(val, []) + [key]
 
-print("files length is ", len(files))
+# files_per_cluster = {k: v for k, v in sorted(files_per_cluster.items(), key=lambda item: item[1])}
 
-fileName_to_machines_dict = {}
-for file in files:
-    if file.filename in fileName_to_machines_dict:
-        fileName_to_machines_dict[file.filename] += 1
-    else:
-        fileName_to_machines_dict[file.filename] = 1
-print(len(fileName_to_machines_dict))
-fileName_to_machines_dict = {key: val for key, val in fileName_to_machines_dict.items() if val > 20}
+for key, val in domain_per_cluster.items():
+    print(key, ':', val)
 
-# for key, val in fileName_to_machines_dict.items():
-#     new_key = pattern.sub('x', key)
-#     fileName_to_machines_dict[new_key] = fileName_to_machines_dict.pop(key)
+# %%
+threat = data.columns[20]
+name = data.columns[0]
 
-fileName_to_machines_dict = {k: v for k, v in sorted(fileName_to_machines_dict.items(), key=lambda item: item[1])}
+threat_files_set = set()
+for index, row in data.iterrows():
+    file_threat = row[threat]
+    if isinstance(file_threat, str):
+        threat_files_set.add(row[name])
 
-print("myDict:\n", fileName_to_machines_dict)
-print("size of fileName_to_machines_dict: ", len(fileName_to_machines_dict))
+threat_column = data[data.columns[20]]
+dirty_files_lst = []
+for file_list in files_per_cluster.values():
+    file_list_len = len(file_list)
+    counter = 0
+    for file in file_list:
+        if file in threat_files_set:
+            counter += 1
+    dirty_files_lst.append(counter / file_list_len)
+print(dirty_files_lst)
+# %%
+machines_per_cluster = {}
+index = 0
+for files_list, domains_list in zip(files_per_cluster.values(), domain_per_cluster.values()):
+    for file in files_list:
+        for domain in domains_list:
+            if G.has_edge(file, domain):
+                machines_per_cluster[index] = machines_per_cluster.get(index, 0) + G[file][domain]['weight']
+    index += 1
 
-files_after_filter = []
-file_names_set = set()
-for file in files:
-    if file.filename in fileName_to_machines_dict:
-        file.num_of_machines = fileName_to_machines_dict.get(file.filename)
-        if file.filename not in file_names_set:
-            file_names_set.add(file.filename)
-            files_after_filter.append(file)
-plt.rcParams["font.family"] = "STSong"
-G = nx.Graph()
-for file in files_after_filter:
-    G.add_edge(file.filename, file.domain)
+machines_per_cluster = {k: v for k, v in sorted(machines_per_cluster.items(), key=lambda item: item[1])}
 
-print(nx.degree(G)) 
-
-plt.subplot(121)
-nx.draw_random(G, with_labels=True, font_weight='bold', font_family='STSong', font_size=10, node_size=100)
-plt.savefig('graph.png')
-plt.show()
+for key, value in machines_per_cluster.items():
+    print(key, value)
+# %%
