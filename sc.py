@@ -5,6 +5,9 @@ import numpy as np
 import networkx as nx
 import pandas as pd
 import matplotlib.pyplot as plt
+import collections
+import matplotlib.ticker as ticker
+
 import time
 
 
@@ -21,40 +24,62 @@ G = nx.Graph()
 # print('Running data number - {}'.format(i))
 data = pd.read_csv(Path().joinpath('data', data_name + str(1) + suffix), sep='\t',
                    error_bad_lines=False, index_col=False, dtype='unicode')
+data = data.sort_values(by=data.columns[0])
 
 print('num of rows in data', len(data))
 # %%
 # instead of using names we will use sha1
 # Number of distinct machines file was downloaded to from this domain. this will be the weight of and edge
 # name = data.columns[0]
-start = time.time()
+start = time.time()  # just to know how much time it runs.
+# fileAndDomain_to_machines_dic key:val -> (key) file&domain : (val) num of machines
 sha1 = data.columns[3]
 domain = data.columns[17]
 machine = data.columns[13]
-data = data.sort_values(by=data.columns[0])
-machines_dic = {}
+fileAndDomain_to_machines_dic = {}
 for index, row in data.iterrows():
     file_sha1 = row[sha1]
     file_domain = row[domain]
     machine_guid = row[machine]
-    machines_dic[(file_sha1, file_domain)] = machines_dic.get((file_sha1, file_domain), []) + [machine_guid]
+    fileAndDomain_to_machines_dic[(file_sha1, file_domain)] = fileAndDomain_to_machines_dic.get(
+        (file_sha1, file_domain), []) + [machine_guid]
 
-for key, val in machines_dic.items():
-    machines_dic[key] = len(list(set(val)))
-machines_dic = sort_dic(machines_dic)
+for key, val in fileAndDomain_to_machines_dic.items():
+    fileAndDomain_to_machines_dic[key] = len(list(set(val)))
+fileAndDomain_to_machines_dic = sort_dic(fileAndDomain_to_machines_dic)
 
 for index, row in data.iterrows():
     file_sha1 = row[sha1]
     file_domain = row[domain]
-    G.add_edge(file_sha1, file_domain, weight=machines_dic[(file_sha1, file_domain)])
+    G.add_edge(file_sha1, file_domain, weight=fileAndDomain_to_machines_dic[(file_sha1, file_domain)])
 print('It took {} seconds.'.format(time.time() - start))
 print("Num of nodes in G {}".format(len(G)))
+# now we have a graph G which has a edges between files and the domain it was downloaded from, with weight
+# which is the number of unique machines which downloaded the file from this domain.
 # %%
+# this is just a print out of the weight of each edge.
 attr = nx.get_edge_attributes(G, 'weight')
 attr = sort_dic(attr)
 for key, value in attr.items():
     print(key, ' : ', value)
 print("len is ", len(attr))
+# %%
+degree_sequence = sorted([d for n, d in G.degree()], reverse=True)  # degree sequence
+# print "Degree sequence", degree_sequence
+degreeCount = collections.Counter(degree_sequence)
+deg, cnt = zip(*degreeCount.items())
+fig, ax = plt.subplots(figsize=(10, 10))
+plt.scatter(deg, cnt, color='b', linewidths=0.1)
+plt.yscale('symlog')
+plt.title("Degree Histogram")
+plt.ylabel("Count")
+plt.xlabel("Degree")
+ticks = np.arange(0,6200,300)
+ax.set_xticks(ticks)
+ax.set_xticklabels(ticks)
+plt.savefig('graph_degree_histogram.png')
+plt.show()
+
 # %%
 partition = community.best_partition(G, weight='weight')
 partition = sort_dic(partition)
@@ -104,27 +129,3 @@ for index, (files_list, domains_list) in enumerate(zip(files_per_cluster.values(
 machines_per_cluster = sort_dic(machines_per_cluster)
 
 print(*machines_per_cluster.items(), sep='\n')
-# %%
-plt.figure(figsize=(30, 20))
-t = np.arange(0., len(dirty_files_lst), 1)
-
-# plt.plot(t, dirty_files_lst, 'r--', )
-plt.scatter(np.arange(0.0, len(dirty_files_lst), 1.0), dirty_files_lst)
-plt.xlabel('cluster number')
-plt.savefig('graph.png')
-plt.show()
-# %%
-
-t = np.arange(0., len(files_per_cluster), 1)
-plt.figure(figsize=(10, 5))
-
-files_per_cluster_lst = []
-for key, value in files_per_cluster.items():
-    files_per_cluster_lst.append(len(value))
-# plt.plot(t, dirty_files_lst, 'r--', )
-plt.scatter(np.arange(0.0, len(files_per_cluster), 1.0), files_per_cluster_lst, linewidth=1)
-plt.xlabel('cluster number')
-plt.ylabel('files per cluster')
-plt.xscale('log')
-plt.savefig('graph.png')
-plt.show()
