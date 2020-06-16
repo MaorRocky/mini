@@ -26,7 +26,7 @@ def graph(lst, title):
     count = collections.Counter(lst)
     deg, cnt = zip(*count.items())
     fig, ax = plt.subplots(figsize=(8, 8))
-    plt.scatter(deg, cnt, color='red',s=8)
+    plt.scatter(deg, cnt, color='red', s=8)
     plt.yscale('log')
     plt.xscale('log')
     plt.title(title)
@@ -36,11 +36,13 @@ def graph(lst, title):
     plt.savefig('{0}_graph_degree_histogram.png'.format(title))
     plt.show()
 
-#%%
+
 # raeding data
 file_to_machines_dic = {}
 clean_dict = {}
 unknown_set = set()
+file_sha1_to_size = {}
+
 data_name = 'Obf_oneInTenWeek1_d'
 suffix = '.tsv'
 G = nx.Graph()
@@ -62,7 +64,7 @@ for i in range(1, 3):
     sha1 = data.columns[3]
     domain = data.columns[17]
     threat = data.columns[20]
-
+    size = data.columns[24]
     machine = data.columns[13]
     fileAndDomain_to_machines_dic = {}
 
@@ -91,6 +93,11 @@ for i in range(1, 3):
             file_to_machines_dic[file_sha1] = file_to_machines_dic.get(file_sha1, []) + [machine_guid]
         else:
             clean_dict[file_sha1] = clean_dict.get(file_sha1, []) + [machine_guid]
+
+    for index, row in data.iterrows():
+        file_sha1 = row[sha1]
+        file_size = row[size]
+        file_sha1_to_size[file_sha1] = file_size
 # %%
 for key, val in file_to_machines_dic.items():
     file_to_machines_dic[key] = len(list(set(val)))
@@ -150,10 +157,6 @@ degree_sequence = sorted([d for n, d in G.degree()], reverse=True)  # degree seq
 file_sha1_to_degree_dict = {}
 domain_to_degree_dict = {}
 
-
-
-
-
 # %%
 graph(degree_sequence, "Degree Histogram")
 
@@ -202,10 +205,15 @@ print(sorted(dirty_precent_per_cluster_lst, reverse=True))
 
 # %%
 machines_per_cluster = {}
+file_to_list_of_domains_per_cluster_dic = {}
+
 for index, (files_list, domains_list) in enumerate(zip(files_per_cluster.values(), domain_per_cluster.values())):
     for file in files_list:
         for domain in domains_list:
             if G.has_edge(file, domain):
+                file_to_list_of_domains_per_cluster_dic[file] = file_to_list_of_domains_per_cluster_dic.get(file,
+                                                                                                            []) + [
+                                                                    domain]
                 machines_per_cluster[index] = machines_per_cluster.get(index, 0) + G[file][domain]['weight']
 
 machines_per_cluster = sort_dic(machines_per_cluster)
@@ -223,10 +231,10 @@ for index, (files_list, domains_list) in enumerate(zip(files_per_cluster.values(
                 domain_total_files_counter += 1
                 if file in malicious_dict.keys():
                     domain_dirty_files_counter += 1
-        print('%s / %s' % (domain_dirty_files_counter, domain_total_files_counter))
+        # print('%s / %s' % (domain_dirty_files_counter, domain_total_files_counter))
         domain_to_dirty_precent[domain] = int(round((domain_dirty_files_counter / domain_total_files_counter), 2) * 100)
 domain_to_dirty_precent = sort_dic(domain_to_dirty_precent)
-print(*domain_to_dirty_precent.items(), sep='\n')
+# print(*domain_to_dirty_precent.items(), sep='\n')
 
 # %%
 dirty_precent_domains = {}
@@ -283,5 +291,53 @@ plt.ylabel("Amount of clusters with 'x' dirty files percentage")
 plt.xlabel("percetage")
 plt.savefig('graph_dirty_percent_clusters.png')
 plt.show()
-#%%
 
+# %%
+# feature_ extraction
+cluster_number_to_malicious_percent_dic = {index: percent for index, percent in
+                                           enumerate(dirty_precent_per_cluster_lst)}
+cluster_per_file = {}
+for cluster_index, files_list in files_per_cluster.items():
+    for file_sha1 in files_list:
+        cluster_per_file[file_sha1] = cluster_index
+
+final_dic = {}
+for file_sha1, num_of_guid in clean_dict.items():
+    final_dic[file_sha1] = [file_sha1,
+                            file_sha1_to_size[file_sha1],
+                            num_of_guid,
+                            # file_to_list_of_domains_per_cluster_dic[file_sha1],
+                            len(file_to_list_of_domains_per_cluster_dic[file_sha1]),
+                            cluster_per_file[file_sha1],
+                            cluster_number_to_malicious_percent_dic[cluster_per_file[file_sha1]],
+                            max_community_size_dict[cluster_per_file[file_sha1]], 0]
+
+for file_sha1, num_of_guid in malicious_dict.items():
+    final_dic[file_sha1] = [file_sha1,
+                            file_sha1_to_size[file_sha1],
+                            num_of_guid,
+                            # file_to_list_of_domains_per_cluster_dic[file_sha1],
+                            len(file_to_list_of_domains_per_cluster_dic[file_sha1]),
+                            cluster_per_file[file_sha1],
+                            cluster_number_to_malicious_percent_dic[cluster_per_file[file_sha1]],
+
+                            max_community_size_dict[cluster_per_file[file_sha1]], 1]
+train_X = []
+train_y = []
+
+for file_sha1, features in final_dic.items():
+    train_X.append(features[:-1])
+    train_y.append(final_dic[file_sha1][-1])
+# %%%
+from sklearn import tree
+
+clf = tree.DecisionTreeClassifier()
+clf = clf.fit(train_X, train_y)
+
+y_pred = clf.predict(train_X)
+
+res = []
+for y, pred in zip(train_y, y_pred):
+    res.append(y - pred)
+
+print(all([res[x] == 0 for x in res]))
