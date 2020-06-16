@@ -51,6 +51,14 @@ def train(d1, d2):
     data_name = 'Obf_oneInTenWeek1_d'
     suffix = '.tsv'
     G = nx.Graph()
+
+    def add_edge(u, v, w):
+        if G.has_edge(u, v):
+            w = G[u][v]['weight'] + w
+            G.add_edge(u, v, weight=w)
+        else:
+            G.add_edge(u, v, weight=w)
+
     for i in range(d1, d2):
         print('Running data number - {}'.format(i))
         data = pd.read_csv(Path().joinpath('data', data_name + str(i) + suffix), sep='\t',
@@ -85,7 +93,8 @@ def train(d1, d2):
             file_sha1 = row[sha1]
             unknown_set.add(file_sha1)
             file_domain = row[domain]
-            G.add_edge(file_sha1, file_domain, weight=fileAndDomain_to_machines_dic[(file_sha1, file_domain)])
+            weight = fileAndDomain_to_machines_dic[(file_sha1, file_domain)]
+            add_edge(file_sha1, file_domain, weight)
         print('It took {} seconds.'.format(time.time() - start))
 
         for index, row in data.iterrows():
@@ -215,7 +224,9 @@ def train(d1, d2):
     # print(*machines_per_cluster.items(), sep='\n')
 
     domain_to_dirty_precent = {}
+    cluster_to_file_precent_in_cluster = {}
     for index, (files_list, domains_list) in enumerate(zip(files_per_cluster.values(), domain_per_cluster.values())):
+        cluster_to_file_precent_in_cluster[index] = len(files_list) / (len(files_list) + len(domains_list))
         for domain in domains_list:
             domain_total_files_counter = 0
             domain_dirty_files_counter = 0
@@ -293,7 +304,7 @@ def train(d1, d2):
         final_dic[file_sha1] = [file_sha1,
                                 int(file_sha1_to_size[file_sha1]),
                                 num_of_guid,
-                                # file_to_list_of_domains_per_cluster_dic[file_sha1],
+                                cluster_to_file_precent_in_cluster[cluster_per_file[file_sha1]],
                                 len(file_to_list_of_domains_per_cluster_dic[file_sha1]),
                                 cluster_per_file[file_sha1],
                                 cluster_number_to_malicious_percent_dic[cluster_per_file[file_sha1]],
@@ -303,11 +314,10 @@ def train(d1, d2):
         final_dic[file_sha1] = [file_sha1,
                                 int(file_sha1_to_size[file_sha1]),
                                 num_of_guid,
-                                # file_to_list_of_domains_per_cluster_dic[file_sha1],
+                                cluster_to_file_precent_in_cluster[cluster_per_file[file_sha1]],
                                 len(file_to_list_of_domains_per_cluster_dic[file_sha1]),
                                 cluster_per_file[file_sha1],
                                 cluster_number_to_malicious_percent_dic[cluster_per_file[file_sha1]],
-
                                 max_community_size_dict[cluster_per_file[file_sha1]], 1]
     train_X = []
     train_y = []
@@ -316,14 +326,14 @@ def train(d1, d2):
         train_X.append(features[:-1])
         train_y.append(final_dic[file_sha1][-1])
 
-    return train_X, train_y
+    return train_X, train_y, final_dic
 
 
 # %%
 
-train_X, train_y = train(1, 3)
+train_X, train_y, final_dic = train(1, 5)
 # %%
-test_X, test_y = train(3, 4)
+test_X, test_y, final_dic_test = train(6, 7)
 # %%
 
 # temp = [v for v in test_X if v != 0 & v != 1]
@@ -332,9 +342,9 @@ clf = tree.DecisionTreeClassifier()
 clf = clf.fit(train_X, train_y)
 #
 y_pred = clf.predict(test_X)
+# %%
+res = []
+for y, pred in zip(test_y, y_pred):
+    res.append(abs(y - pred))
 
-# res = []
-# for y, pred in zip(test_y, y_pred):
-#     res.append(abs(y - pred))
-#
-# print(1 - (np.array(res).sum()) / len(res))
+print(1 - (np.array(res).sum()) / len(res))
