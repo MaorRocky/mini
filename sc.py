@@ -21,6 +21,22 @@ def sort_dic_rev(dic):
     return {k: v for k, v in sorted(dic.items(), reverse=True, key=lambda item: item[1])}
 
 
+def graph(lst, title):
+    lst = sorted(lst)
+    count = collections.Counter(lst)
+    deg, cnt = zip(*count.items())
+    fig, ax = plt.subplots(figsize=(8, 8))
+    plt.scatter(deg, cnt, color='red',s=8)
+    plt.yscale('log')
+    plt.xscale('log')
+    plt.title(title)
+    plt.ylabel("Count")
+    plt.xlabel("Degree")
+    plt.grid()
+    plt.savefig('{0}_graph_degree_histogram.png'.format(title))
+    plt.show()
+
+#%%
 # raeding data
 file_to_machines_dic = {}
 clean_dict = {}
@@ -30,7 +46,7 @@ suffix = '.tsv'
 G = nx.Graph()
 
 # %%
-for i in range(1, 6):
+for i in range(1, 3):
     print('Running data number - {}'.format(i))
     data = pd.read_csv(Path().joinpath('data', data_name + str(i) + suffix), sep='\t',
                        error_bad_lines=False, index_col=False, dtype='unicode')
@@ -45,8 +61,11 @@ for i in range(1, 6):
     # fileAndDomain_to_machines_dic key:val -> (key) file&domain : (val) num of machines
     sha1 = data.columns[3]
     domain = data.columns[17]
+    threat = data.columns[20]
+
     machine = data.columns[13]
     fileAndDomain_to_machines_dic = {}
+
     for index, row in data.iterrows():
         file_sha1 = row[sha1]
         file_domain = row[domain]
@@ -64,10 +83,6 @@ for i in range(1, 6):
         G.add_edge(file_sha1, file_domain, weight=fileAndDomain_to_machines_dic[(file_sha1, file_domain)])
     print('It took {} seconds.'.format(time.time() - start))
 
-    threat = data.columns[20]
-    sha1 = data.columns[3]
-    machine = data.columns[13]
-
     for index, row in data.iterrows():
         file_sha1 = row[sha1]
         machine_guid = row[machine]
@@ -83,19 +98,25 @@ for key, val in file_to_machines_dic.items():
 for key, val in clean_dict.items():
     clean_dict[key] = len(list(set(val)))
 
-malicious_dict = {k: v for k, v in file_to_machines_dic.items() if v > 5}
-clean_dict = {k: v for k, v in clean_dict.items() if v > 9}
+malicious_dict = {k: v for k, v in file_to_machines_dic.items() if v > 4}
+clean_dict = {k: v for k, v in clean_dict.items() if v > 8}
 print('number of malicious files:', len(malicious_dict))
-print(len(clean_dict), sep='\n')
+print('number clean files', len(clean_dict))
 
 # %% cleaning the data to
+counter = 0
 for key, val in malicious_dict.items():
     if key in clean_dict.keys():
         del clean_dict[key]
-
+        counter += 1
+print(counter)
+sha1_set = unknown_set.copy()
+print('unknown_set before cleaning %d' % len(unknown_set))
 for file_sha1 in unknown_set.copy():
     if file_sha1 in clean_dict or file_sha1 in malicious_dict:
         unknown_set.remove(file_sha1)
+
+print('unknown_set after cleaning %d' % len(unknown_set))
 
 # %%
 print("Num of nodes in G {}".format(len(G)))
@@ -115,47 +136,47 @@ print('max deg:', max_degree)
 # which is the number of unique machines which downloaded the file from this domain.
 
 # this is just a print out of the weight of each edge.
-attr = nx.get_edge_attributes(G, 'weight')
-attr = sort_dic(attr)
+edge_to_weights_dic = nx.get_edge_attributes(G, 'weight')
+edge_to_weights_dic = sort_dic(edge_to_weights_dic)
 # for key, value in attr.items():
 #     print(key, ' : ', value)
-weight_array = np.array([attr[k] for k in attr])
+weight_array = np.array([edge_to_weights_dic[k] for k in edge_to_weights_dic])
 print('average weight: ', weight_array.mean())
 print('max weight :', np.amax(weight_array))
 # print("len is ", len(attr))
 
 # %%
 degree_sequence = sorted([d for n, d in G.degree()], reverse=True)  # degree sequence
-# print "Degree sequence", degree_sequence
-degreeCount = collections.Counter(degree_sequence)
-deg, cnt = zip(*degreeCount.items())
-fig, ax = plt.subplots(figsize=(8, 8))
-plt.bar(deg, cnt, color='orange', linewidth=0.6)
-plt.yscale('log')
-plt.xscale('log')
-plt.title("Degree Histogram")
-plt.ylabel("Count")
-plt.xlabel("Degree")
-plt.grid()
-# ticks = np.arange(0, 6200, 400)
-# ax.set_xticks(ticks)
-# ax.set_xticklabels(ticks)
-plt.savefig('graph_degree_histogram.png')
-plt.show()
+file_sha1_to_degree_dict = {}
+domain_to_degree_dict = {}
+
+
+
+
+
+# %%
+graph(degree_sequence, "Degree Histogram")
+
+for n, d in G.degree():
+    if n in sha1_set:
+        file_sha1_to_degree_dict[n] = d
+    else:
+        domain_to_degree_dict[n] = d
+# file graph for degree
+
+file_degree_lst = sorted(list(file_sha1_to_degree_dict.values()))
+domain_degree_list = sorted(list(domain_to_degree_dict.values()))
+
+graph(file_degree_lst, "File Degree Histogram")
+graph(domain_degree_list, "Domain Degree Histogram")
 
 # %%
 partition = community.best_partition(G, weight='weight')
 partition = sort_dic(partition)
-
-# file_names_column = data[data.columns[0]]
-# fileName_set = set(file_names_column)
-
-file_sah1_column = data[data.columns[3]]
-file_sah1_set = set(file_sah1_column)
 domain_per_cluster = {}
 files_per_cluster = {}
 for key, val in partition.items():
-    if key in file_sah1_set:
+    if key in sha1_set:
         files_per_cluster[val] = files_per_cluster.get(val, []) + [key]
     else:
         domain_per_cluster[val] = domain_per_cluster.get(val, []) + [key]
@@ -169,7 +190,6 @@ max_community_size_dict = sort_dic_rev(max_community_size_dict)
 print('Max community size:', list(max_community_size_dict.values())[0])
 
 # %%
-threat_column = data[data.columns[20]]
 dirty_precent_per_cluster_lst = []
 for file_list in files_per_cluster.values():
     file_list_len = len(file_list)
@@ -178,7 +198,8 @@ for file_list in files_per_cluster.values():
         if file in malicious_dict.keys():
             counter += 1
     dirty_precent_per_cluster_lst.append(int(round((counter / file_list_len), 2) * 100))
-print(dirty_precent_per_cluster_lst)
+print(sorted(dirty_precent_per_cluster_lst, reverse=True))
+
 # %%
 machines_per_cluster = {}
 for index, (files_list, domains_list) in enumerate(zip(files_per_cluster.values(), domain_per_cluster.values())):
@@ -204,8 +225,9 @@ for index, (files_list, domains_list) in enumerate(zip(files_per_cluster.values(
                     domain_dirty_files_counter += 1
         print('%s / %s' % (domain_dirty_files_counter, domain_total_files_counter))
         domain_to_dirty_precent[domain] = int(round((domain_dirty_files_counter / domain_total_files_counter), 2) * 100)
+domain_to_dirty_precent = sort_dic(domain_to_dirty_precent)
+print(*domain_to_dirty_precent.items(), sep='\n')
 
-# print(*domain_to_dirty_precent.items(), sep='\n')
 # %%
 dirty_precent_domains = {}
 for domain, percent in domain_to_dirty_precent.items():
@@ -219,9 +241,9 @@ plt.yscale('log')
 plt.title("Amount of domains with the number of dirty files percentage")
 plt.ylabel("Amount of domains")
 plt.xlabel("dirty file percentage")
-ticks = np.arange(0, 105, 5)
-ax.set_xticks(ticks)
-ax.set_xticklabels(ticks)
+# ticks = np.arange(0, 105, 5)
+# ax.set_xticks(ticks)
+# ax.set_xticklabels(ticks)
 plt.savefig('graph_dirty_percent_domains.png')
 plt.show()
 
@@ -246,20 +268,20 @@ plt.savefig('values_to_machines')
 plt.show()
 # %%
 dirty_per_percent_dict = {}
-for i in range(101):
-    dirty_per_percent_dict[i] = 0
-for i in dirty_precent_per_cluster_lst:
-    dirty_per_percent_dict[dirty_precent_per_cluster_lst[i]] += 1
+for percent in dirty_precent_per_cluster_lst:
+    dirty_per_percent_dict[percent] = dirty_per_percent_dict.get(percent, 0) + 1
+dirty_per_percent_dict = {k: dirty_per_percent_dict[k] for k in sorted(dirty_per_percent_dict)}
 
-percent, counter = zip(*dirty_per_percent_dict.items())  # creating 2 arrays of keys , values
+# %%
+
+percent, cnt = zip(*dirty_per_percent_dict.items())
 fig, ax = plt.subplots(figsize=(8, 8))
-plt.bar(percent, counter, color='green')
+plt.bar(percent, cnt, color='green')
 plt.yscale('symlog')
 plt.title("Clusters dirty percentage Histogram")
 plt.ylabel("Amount of clusters with 'x' dirty files percentage")
 plt.xlabel("percetage")
-ticks = np.arange(0, 105, 5)
-ax.set_xticks(ticks)
-ax.set_xticklabels(ticks)
 plt.savefig('graph_dirty_percent_clusters.png')
 plt.show()
+#%%
+
