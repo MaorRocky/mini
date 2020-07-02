@@ -37,18 +37,26 @@ def graph(lst, title):
     plt.show()
 
 
+def add_edge(u, v, w):
+    if G.has_edge(u, v):
+        G[u][v]['weight'] += w
+    else:
+        G.add_edge(u, v, weight=w)
+
+
 # raeding data
 file_to_machines_dic = {}
 clean_dict = {}
 unknown_set = set()
 file_sha1_to_size = {}
+fileAndDomain_to_machines_dic = {}
 
 data_name = 'Obf_oneInTenWeek1_d'
 suffix = '.tsv'
 G = nx.Graph()
 
 # %%
-for i in range(1, 3):
+for i in range(1, 6):
     print('Running data number - {}'.format(i))
     data = pd.read_csv(Path().joinpath('data', data_name + str(i) + suffix), sep='\t',
                        error_bad_lines=False, index_col=False, dtype='unicode')
@@ -66,7 +74,7 @@ for i in range(1, 3):
     threat = data.columns[20]
     size = data.columns[24]
     machine = data.columns[13]
-    fileAndDomain_to_machines_dic = {}
+    # fileAndDomain_to_machines_dic = {}
 
     for index, row in data.iterrows():
         file_sha1 = row[sha1]
@@ -75,15 +83,16 @@ for i in range(1, 3):
         fileAndDomain_to_machines_dic[(file_sha1, file_domain)] = fileAndDomain_to_machines_dic.get(
             (file_sha1, file_domain), []) + [machine_guid]
 
-    for key, val in fileAndDomain_to_machines_dic.items():
-        fileAndDomain_to_machines_dic[key] = len(list(set(val)))
-    fileAndDomain_to_machines_dic = sort_dic(fileAndDomain_to_machines_dic)
-    for index, row in data.iterrows():
-        file_sha1 = row[sha1]
-        unknown_set.add(file_sha1)
-        file_domain = row[domain]
-        G.add_edge(file_sha1, file_domain, weight=fileAndDomain_to_machines_dic[(file_sha1, file_domain)])
-    print('It took {} seconds.'.format(time.time() - start))
+    # for key, val in fileAndDomain_to_machines_dic.items():
+    #     fileAndDomain_to_machines_dic[key] = len(list(set(val)))
+    # fileAndDomain_to_machines_dic = sort_dic(fileAndDomain_to_machines_dic)
+    # for index, row in data.iterrows():
+    #     file_sha1 = row[sha1]
+    #     unknown_set.add(file_sha1)
+    #     file_domain = row[domain]
+    #     # weight = fileAndDomain_to_machines_dic[(file_sha1, file_domain)]
+    #     # add_edge(file_sha1, file_domain, weight)
+    # print('It took {} seconds.'.format(time.time() - start))
 
     for index, row in data.iterrows():
         file_sha1 = row[sha1]
@@ -98,6 +107,15 @@ for i in range(1, 3):
         file_sha1 = row[sha1]
         file_size = row[size]
         file_sha1_to_size[file_sha1] = file_size
+
+for key, val in fileAndDomain_to_machines_dic.items():
+    fileAndDomain_to_machines_dic[key] = len(list(set(val)))
+
+fileAndDomain_to_machines_dic = sort_dic(fileAndDomain_to_machines_dic)
+for (file_sha1, file_domain), weight in fileAndDomain_to_machines_dic.items():
+    add_edge(file_sha1, file_domain, weight)
+print('It took {} seconds.'.format(time.time() - start))
+
 # %%
 for key, val in file_to_machines_dic.items():
     file_to_machines_dic[key] = len(list(set(val)))
@@ -222,7 +240,10 @@ machines_per_cluster = sort_dic(machines_per_cluster)
 
 # %%
 domain_to_dirty_precent = {}
+cluster_to_file_precent_in_cluster = {}
+
 for index, (files_list, domains_list) in enumerate(zip(files_per_cluster.values(), domain_per_cluster.values())):
+    cluster_to_file_precent_in_cluster[index] = len(files_list) / (len(files_list) + len(domains_list))
     for domain in domains_list:
         domain_total_files_counter = 0
         domain_dirty_files_counter = 0
@@ -304,9 +325,9 @@ for cluster_index, files_list in files_per_cluster.items():
 final_dic = {}
 for file_sha1, num_of_guid in clean_dict.items():
     final_dic[file_sha1] = [file_sha1,
-                            file_sha1_to_size[file_sha1],
+                            int(file_sha1_to_size[file_sha1]),
                             num_of_guid,
-                            # file_to_list_of_domains_per_cluster_dic[file_sha1],
+                            cluster_to_file_precent_in_cluster[cluster_per_file[file_sha1]],
                             len(file_to_list_of_domains_per_cluster_dic[file_sha1]),
                             cluster_per_file[file_sha1],
                             cluster_number_to_malicious_percent_dic[cluster_per_file[file_sha1]],
@@ -314,13 +335,12 @@ for file_sha1, num_of_guid in clean_dict.items():
 
 for file_sha1, num_of_guid in malicious_dict.items():
     final_dic[file_sha1] = [file_sha1,
-                            file_sha1_to_size[file_sha1],
+                            int(file_sha1_to_size[file_sha1]),
                             num_of_guid,
-                            # file_to_list_of_domains_per_cluster_dic[file_sha1],
+                            cluster_to_file_precent_in_cluster[cluster_per_file[file_sha1]],
                             len(file_to_list_of_domains_per_cluster_dic[file_sha1]),
                             cluster_per_file[file_sha1],
                             cluster_number_to_malicious_percent_dic[cluster_per_file[file_sha1]],
-
                             max_community_size_dict[cluster_per_file[file_sha1]], 1]
 train_X = []
 train_y = []

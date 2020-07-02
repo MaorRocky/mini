@@ -47,15 +47,14 @@ def train(d1, d2):
     clean_dict = {}
     unknown_set = set()
     file_sha1_to_size = {}
-
+    fileAndDomain_to_machines_dic = {}
     data_name = 'Obf_oneInTenWeek1_d'
     suffix = '.tsv'
     G = nx.Graph()
 
     def add_edge(u, v, w):
         if G.has_edge(u, v):
-            w = G[u][v]['weight'] + w
-            G.add_edge(u, v, weight=w)
+            G[u][v]['weight'] += w
         else:
             G.add_edge(u, v, weight=w)
 
@@ -86,17 +85,6 @@ def train(d1, d2):
             fileAndDomain_to_machines_dic[(file_sha1, file_domain)] = fileAndDomain_to_machines_dic.get(
                 (file_sha1, file_domain), []) + [machine_guid]
 
-        for key, val in fileAndDomain_to_machines_dic.items():
-            fileAndDomain_to_machines_dic[key] = len(list(set(val)))
-        fileAndDomain_to_machines_dic = sort_dic(fileAndDomain_to_machines_dic)
-        for index, row in data.iterrows():
-            file_sha1 = row[sha1]
-            unknown_set.add(file_sha1)
-            file_domain = row[domain]
-            weight = fileAndDomain_to_machines_dic[(file_sha1, file_domain)]
-            add_edge(file_sha1, file_domain, weight)
-        print('It took {} seconds.'.format(time.time() - start))
-
         for index, row in data.iterrows():
             file_sha1 = row[sha1]
             machine_guid = row[machine]
@@ -110,6 +98,15 @@ def train(d1, d2):
             file_sha1 = row[sha1]
             file_size = row[size]
             file_sha1_to_size[file_sha1] = file_size
+
+    for key, val in fileAndDomain_to_machines_dic.items():
+        fileAndDomain_to_machines_dic[key] = len(list(set(val)))
+
+    fileAndDomain_to_machines_dic = sort_dic(fileAndDomain_to_machines_dic)
+
+    for (file_sha1, file_domain), weight in fileAndDomain_to_machines_dic.items():
+        add_edge(file_sha1, file_domain, weight)
+
     for key, val in file_to_machines_dic.items():
         file_to_machines_dic[key] = len(list(set(val)))
 
@@ -331,9 +328,9 @@ def train(d1, d2):
 
 # %%
 
-train_X, train_y, final_dic = train(1, 5)
+train_X, train_y, final_dic = train(1, 3)
 # %%
-test_X, test_y, final_dic_test = train(6, 7)
+test_X, test_y, final_dic_test = train(6, 8)
 # %%
 
 # temp = [v for v in test_X if v != 0 & v != 1]
